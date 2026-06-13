@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+
+# team-mode / tooling session state (not part of the project)
+.agent-teams/
+.lead-sessions.json
