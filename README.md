@@ -16,23 +16,40 @@ Since 2026-06-15, Anthropic splits billing into two pools:
 So the official `claude-agent-acp` = **ACP + SDK** (consumes credits).
 `claude-pty-acp` = **ACP + interactive PTY** (stays on the subscription): the protocol shape is identical, so off-the-shelf ACP clients (Zed, neovim, …) connect with zero changes, but the backend runs a real interactive `claude` process and the usage lands on your subscription.
 
-## Quick start
+## Install
+
+Prerequisites: **the `claude` CLI installed and logged in to your subscription** (this drives a real interactive `claude`; that's what keeps usage on the subscription path), and **Node.js ≥ 20**.
+
+### From npm (recommended)
 
 ```bash
-git clone https://github.com/ClayCheung/claude-pty-acp.git
-cd claude-pty-acp
-npm install      # postinstall fixes node-pty's spawn-helper exec bit automatically
-npm run build    # compile to dist/ (recommended: clients run `node dist/index.js`, faster, no tsx)
+npm install -g claude-pty-acp
 ```
 
-Prerequisites:
+This installs a global **`claude-pty-acp`** command — that's the binary your ACP client will run. The package ships the compiled `dist/`, so there's nothing to build; the postinstall step also fixes node-pty's spawn-helper exec bit automatically.
 
-- **`claude` CLI installed and logged in to your subscription** (this drives a real interactive `claude`; that is what keeps usage on the subscription path).
-- Node.js ≥ 20.
+Useful afterwards:
+
+```bash
+which claude-pty-acp                 # absolute path (handy for GUI clients with a trimmed PATH)
+npm install -g claude-pty-acp@latest # upgrade
+npm uninstall -g claude-pty-acp      # remove
+```
+
+Then point your client at it — see [Use it in an ACP client](#use-it-in-an-acp-client).
+
+### From source (for development)
+
+```bash
+git clone https://github.com/modelzen/claude-pty-acp.git
+cd claude-pty-acp
+npm install      # postinstall fixes node-pty's spawn-helper exec bit automatically
+npm run build    # compile to dist/ (clients run `node dist/index.js`)
+```
 
 During development you can also run it straight from source with `npm start` (= `tsx src/index.ts`).
 
-> Binary resolution order: `CC_CLAUDE_BIN` → `PATH` → common locations like `~/.local/bin/claude`. GUI launchers (e.g. Zed) often start with a trimmed `PATH`, so it falls back to common install paths to avoid a bare `claude` not being found.
+> Binary resolution order for the underlying `claude`: `CC_CLAUDE_BIN` → `PATH` → common locations like `~/.local/bin/claude`. GUI launchers (e.g. Zed) often start with a trimmed `PATH`, so it falls back to common install paths to avoid a bare `claude` not being found.
 
 ## Use it in an ACP client
 
@@ -40,14 +57,14 @@ During development you can also run it straight from source with `npm start` (= 
 
 ### Zed
 
-After `npm run build`, register it as a custom ACP agent in Zed's `settings.json` (use the compiled JS + an absolute path — most robust):
+Register it as a custom ACP agent in Zed's `settings.json`. With the npm global install, just point at the `claude-pty-acp` command:
 
 ```json
 {
   "agent_servers": {
     "Claude Code (claude-pty-acp)": {
-      "command": "node",
-      "args": ["/ABS/PATH/claude-pty-acp/dist/index.js"],
+      "command": "claude-pty-acp",
+      "args": [],
       "env": {}
     }
   }
@@ -58,7 +75,11 @@ Then open Zed's **Agent panel**, pick **"Claude Code (claude-pty-acp)"**, and ch
 
 Notes:
 
-- If `node` isn't on Zed's `PATH`, replace `"command": "node"` with the absolute path to node (`which node`).
+- If Zed can't find `claude-pty-acp` (GUI apps often start with a trimmed `PATH`), use its absolute path from `which claude-pty-acp`:
+  ```json
+  { "command": "/ABS/PATH/to/claude-pty-acp", "args": [], "env": {} }
+  ```
+- Running from source instead of npm? Point at the built entry: `{ "command": "node", "args": ["/ABS/PATH/claude-pty-acp/dist/index.js"] }` (if `node` isn't on Zed's PATH, use its absolute path from `which node`).
 - Zed does not implement the optional streaming-preview extension, so it runs in **`thought` mode**: the speculative preview shows up in the collapsible thought area, and the final answer arrives as authoritative message blocks (see [Streaming](#streaming-fast-preview--authoritative-final)). No duplicated text.
 - Pass any environment variable (see [Environment variables](#environment-variables)) via the `env` object, e.g. `"env": { "CC_PERMISSION_MODE": "acceptEdits" }`.
 
@@ -67,13 +88,13 @@ Notes:
 Use a custom ACP agent in CodeCompanion / avante. The command and args are the same as Zed's:
 
 ```
-command: node
-args:    ["/ABS/PATH/claude-pty-acp/dist/index.js"]
+command: claude-pty-acp     # or the absolute path from `which claude-pty-acp`
+args:    []
 ```
 
 ### Any other ACP client (or your own)
 
-Because it speaks nothing but standard ACP over stdio, any ACP client drives it the same way: **spawn `node /ABS/PATH/claude-pty-acp/dist/index.js` and talk JSON-RPC over its stdin/stdout** (newline-delimited). `stdout` is the protocol channel — all logging goes to `stderr`.
+Because it speaks nothing but standard ACP over stdio, any ACP client drives it the same way: **spawn `claude-pty-acp` and talk JSON-RPC over its stdin/stdout** (newline-delimited). `stdout` is the protocol channel — all logging goes to `stderr`. (From source instead of the npm install, spawn `node /ABS/PATH/claude-pty-acp/dist/index.js`.)
 
 A minimal way to see the exact protocol path a client would take is the bundled test client:
 

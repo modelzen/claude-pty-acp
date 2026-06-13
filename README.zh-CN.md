@@ -16,23 +16,40 @@
 所以官方的 `claude-agent-acp` = **ACP + SDK**（走 credit）。
 claude-pty-acp = **ACP + 交互式 PTY**（走订阅）：协议形状一样，Zed/neovim 等现成 ACP 客户端零改动就能连，但后端跑的是真实交互式 `claude` 进程，用量落在订阅里。
 
-## 快速开始
+## 安装
+
+前置条件：**本机装了 `claude` 且已登录订阅**（它驱动的是真实交互式 `claude`，这正是用量落在订阅路径的原因），以及 **Node.js ≥ 20**。
+
+### 从 npm 安装（推荐）
 
 ```bash
-git clone https://github.com/ClayCheung/claude-pty-acp.git
-cd claude-pty-acp
-npm install      # postinstall 自动修复 node-pty 的 spawn-helper 执行位
-npm run build    # 编译到 dist/（推荐：客户端用 node dist/index.js，启动更快、不依赖 tsx）
+npm install -g claude-pty-acp
 ```
 
-前置条件：
+这会装上一个全局命令 **`claude-pty-acp`**——它就是你的 ACP 客户端要运行的程序。包里已带编译好的 `dist/`，无需自己构建；postinstall 也会自动修复 node-pty 的 spawn-helper 执行位。
 
-- **本机装了 `claude` 且已登录订阅**（它驱动的是真实交互式 `claude`，这正是用量落在订阅路径的原因）。
-- Node.js ≥ 20。
+装完常用：
+
+```bash
+which claude-pty-acp                 # 绝对路径（GUI 客户端 PATH 精简时用得上）
+npm install -g claude-pty-acp@latest # 升级
+npm uninstall -g claude-pty-acp      # 卸载
+```
+
+然后把客户端指向它——见 [在 ACP 客户端中使用](#在-acp-客户端中使用)。
+
+### 从源码安装（开发用）
+
+```bash
+git clone https://github.com/modelzen/claude-pty-acp.git
+cd claude-pty-acp
+npm install      # postinstall 自动修复 node-pty 的 spawn-helper 执行位
+npm run build    # 编译到 dist/（客户端用 node dist/index.js）
+```
 
 开发时也可直接 `npm start`（= `tsx src/index.ts`）从源码跑。
 
-> claude 二进制解析顺序：`CC_CLAUDE_BIN` → `PATH` → `~/.local/bin/claude` 等常见位置。GUI 启动器（如 Zed）的 PATH 往往精简，所以会回退到常见安装路径，避免裸 `claude` 找不到。
+> 底层 `claude` 二进制解析顺序：`CC_CLAUDE_BIN` → `PATH` → `~/.local/bin/claude` 等常见位置。GUI 启动器（如 Zed）的 PATH 往往精简，所以会回退到常见安装路径，避免裸 `claude` 找不到。
 
 ## 在 ACP 客户端中使用
 
@@ -40,14 +57,14 @@ npm run build    # 编译到 dist/（推荐：客户端用 node dist/index.js，
 
 ### Zed
 
-先 `npm run build`，然后在 Zed `settings.json` 注册自定义 ACP agent（用编译产物 + 绝对路径，最稳）：
+在 Zed `settings.json` 注册自定义 ACP agent。用 npm 全局安装后，直接指向 `claude-pty-acp` 命令即可：
 
 ```json
 {
   "agent_servers": {
     "Claude Code (claude-pty-acp)": {
-      "command": "node",
-      "args": ["/ABS/PATH/claude-pty-acp/dist/index.js"],
+      "command": "claude-pty-acp",
+      "args": [],
       "env": {}
     }
   }
@@ -58,7 +75,11 @@ npm run build    # 编译到 dist/（推荐：客户端用 node dist/index.js，
 
 注意：
 
-- 若 `node` 不在 Zed 的 `PATH` 里，把 `"command": "node"` 换成 node 的绝对路径（`which node`）。
+- 若 Zed 找不到 `claude-pty-acp`（GUI 应用的 `PATH` 往往精简），用 `which claude-pty-acp` 拿到的绝对路径：
+  ```json
+  { "command": "/ABS/PATH/to/claude-pty-acp", "args": [], "env": {} }
+  ```
+- 从源码（而非 npm）跑？指向构建产物：`{ "command": "node", "args": ["/ABS/PATH/claude-pty-acp/dist/index.js"] }`（若 `node` 不在 Zed 的 PATH 里，用 `which node` 的绝对路径）。
 - Zed 不实现可选的流式预览扩展，所以是 **`thought` 模式**：抢跑预览出现在折叠的思考区，最终答案以块级权威文本到达（见 [流式](#流式快预览--准最终)）。不会重复。
 - 任意环境变量（见 [环境变量](#环境变量)）可通过 `env` 对象传入，如 `"env": { "CC_PERMISSION_MODE": "acceptEdits" }`。
 
@@ -67,13 +88,13 @@ npm run build    # 编译到 dist/（推荐：客户端用 node dist/index.js，
 走 CodeCompanion / avante 的自定义 ACP agent 配置，命令和参数与 Zed 相同：
 
 ```
-command: node
-args:    ["/ABS/PATH/claude-pty-acp/dist/index.js"]
+command: claude-pty-acp     # 或 `which claude-pty-acp` 的绝对路径
+args:    []
 ```
 
 ### 其它任意 ACP 客户端（或你自建的）
 
-因为它对外只说标准 ACP（stdio），任何 ACP 客户端都用同一种方式驱动：**spawn `node /ABS/PATH/claude-pty-acp/dist/index.js`，走它 stdin/stdout 上的 JSON-RPC**（换行分隔）。`stdout` 是协议通道——所有日志都走 `stderr`。
+因为它对外只说标准 ACP（stdio），任何 ACP 客户端都用同一种方式驱动：**spawn `claude-pty-acp`，走它 stdin/stdout 上的 JSON-RPC**（换行分隔）。`stdout` 是协议通道——所有日志都走 `stderr`。（若从源码而非 npm 跑，则 spawn `node /ABS/PATH/claude-pty-acp/dist/index.js`。）
 
 想最快看清一个客户端会走的协议路径，用自带的 test-client：
 
